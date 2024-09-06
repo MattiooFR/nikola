@@ -33,6 +33,8 @@ import os
 import shutil
 import subprocess
 import sys
+import re
+from urllib.parse import urlparse, unquote
 
 import dateutil.tz
 from blinker import signal
@@ -211,6 +213,14 @@ class CommandNewPost(Command):
             'default': False,
             'help': 'Create post with date path (eg. year/month/day, see NEW_POST_DATE_PATH_FORMAT in config)'
         },
+        {
+            'name': 'import_notion',
+            'long': 'import-notion',
+            'short': 'n',
+            'type': str,
+            'default': '',
+            'help': 'Import a Notion export folder'
+        },
     ]
 
     def _execute(self, options, args):
@@ -226,7 +236,7 @@ class CommandNewPost(Command):
         else:
             path = None
 
-        # Even though stuff was split into `new_page`, it’s easier to do it
+        # Even though stuff was split into `new_page`, it's easier to do it
         # here not to duplicate the code.
         is_page = options.get('is_page', False)
         is_post = not is_page
@@ -305,7 +315,31 @@ class CommandNewPost(Command):
         if entry is False:
             return 1
 
-        if import_file:
+        import_notion = options['import_notion']
+
+        if import_notion:
+            print("Importing Notion Export")
+            print("----------------------\n")
+
+            # Find the Markdown file in the Notion export folder
+            md_files = [f for f in os.listdir(import_notion) if f.endswith('.md')]
+            if not md_files:
+                LOGGER.error("No Markdown file found in the Notion export folder.")
+                return
+
+            md_file = md_files[0]
+            md_file_path = os.path.join(import_notion, md_file)
+
+            # Extract title from file name (remove the hash at the end)
+            file_title = os.path.splitext(md_file)[0]
+            title = ' '.join(file_title.split()[:-1])  # Remove the last word (hash)
+
+            # Process the imported article
+            content = self.process_notion_import(md_file_path, import_notion)
+
+            # Set the content format to Markdown
+            content_format = 'markdown'
+        elif import_file:
             print("Importing Existing {xx}".format(xx=content_type.title()))
             print("-----------------------\n")
         else:
@@ -565,3 +599,33 @@ class CommandNewPost(Command):
         ! not in the POSTS/PAGES tuples and any post scanners (unused)
         ~ not in the COMPILERS dict (disabled)
     Read more: {0}""".format(COMPILERS_DOC_LINK))
+
+    def process_notion_import(self, md_file_path, notion_folder):
+        with open(md_file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+
+        # Find all image links in the Markdown content
+        image_links = re.findall(r'!\[.*?\]\((.*?)\)', content)
+
+        md_filename = os.path.splitext(os.path.basename(md_file_path))[0]
+        images_folder = os.path.join(self.site.original_cwd, 'images')
+        os.makedirs(images_folder, exist_ok=True)
+
+        for link in image_links:
+            parsed_url = urlparse(link)
+            filename = unquote(os.path.basename(parsed_url.path))  # Decode URL-encoded filename
+
+            # Look for the image in the Notion export folder
+            src_path = os.path.join(notion_folder, md_filename, filename)
+            if not os.path.exists(src_path):
+                LOGGER.warning(f"Image file not found: {src_path}")
+                continue
+
+            # Copy the image to the top-level images folder
+            dst_path = os.path.join(images_folder, filename)
+            shutil.copy2(src_path, dst_path)
+
+            # Replace the URL in the content with the new local path
+            content = content.replace(link, f'/images/{filename}')
+
+        return content
