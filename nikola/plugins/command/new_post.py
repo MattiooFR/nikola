@@ -609,11 +609,11 @@ class CommandNewPost(Command):
 
         md_filename = os.path.splitext(os.path.basename(md_file_path))[0]
         # Clean up and shorten md_filename
-        md_filename = re.sub(r'\s+', '_', md_filename)  # Replace spaces with underscores
-        md_filename = re.sub(r'[^\w\-_]', '', md_filename)  # Remove non-alphanumeric characters (except underscores and hyphens)
-        md_filename = md_filename[:20]  # Truncate to 20 characters
+        new_md_filename = re.sub(r'\s+', '_', md_filename)  # Replace spaces with underscores
+        new_md_filename = re.sub(r'[^\w\-_]', '', new_md_filename)  # Remove non-alphanumeric characters (except underscores and hyphens)
+        new_md_filename = new_md_filename[:20]  # Truncate to 20 characters
 
-        images_folder = os.path.join(self.site.original_cwd, 'images', md_filename)
+        images_folder = os.path.join(self.site.original_cwd, 'images', new_md_filename)
         os.makedirs(images_folder, exist_ok=True)
 
         for link in image_links:
@@ -631,6 +631,6 @@ class CommandNewPost(Command):
             shutil.copy2(src_path, dst_path)
 
             # Replace the URL in the content with the new local path
-            content = content.replace(link, f'/images/{md_filename}/{filename}')
+            content = content.replace(link, f'/images/{new_md_filename}/{filename}')
 
         return content
