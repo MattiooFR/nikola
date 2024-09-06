@@ -608,7 +608,12 @@ class CommandNewPost(Command):
         image_links = re.findall(r'!\[.*?\]\((.*?)\)', content)
 
         md_filename = os.path.splitext(os.path.basename(md_file_path))[0]
-        images_folder = os.path.join(self.site.original_cwd, 'images')
+        # Clean up and shorten md_filename
+        md_filename = re.sub(r'\s+', '_', md_filename)  # Replace spaces with underscores
+        md_filename = re.sub(r'[^\w\-_]', '', md_filename)  # Remove non-alphanumeric characters (except underscores and hyphens)
+        md_filename = md_filename[:20]  # Truncate to 20 characters
+
+        images_folder = os.path.join(self.site.original_cwd, 'images', md_filename)
         os.makedirs(images_folder, exist_ok=True)
 
         for link in image_links:
@@ -616,12 +621,12 @@ class CommandNewPost(Command):
             filename = unquote(os.path.basename(parsed_url.path))  # Decode URL-encoded filename
 
             # Look for the image in the Notion export folder
-            src_path = os.path.join(notion_folder, md_filename, filename, md_filename)
+            src_path = os.path.join(notion_folder, md_filename, filename)
             if not os.path.exists(src_path):
                 LOGGER.warning(f"Image file not found: {src_path}")
                 continue
 
-            # Copy the image to the top-level images folder
+            # Copy the image to the images folder
             dst_path = os.path.join(images_folder, filename)
             shutil.copy2(src_path, dst_path)
 
