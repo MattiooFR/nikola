@@ -330,15 +330,8 @@ class CommandNewPost(Command):
             md_file = md_files[0]
             md_file_path = os.path.join(import_notion, md_file)
 
-            # Extract title from file name (remove the hash at the end)
-            file_title = os.path.splitext(md_file)[0]
-            title = ' '.join(file_title.split()[:-1])  # Remove the last word (hash)
-
             # Process the imported article
-            content = self.process_notion_import(md_file_path, import_notion)
-
-            # Set the content format to Markdown
-            content_format = 'markdown'
+            title, content = self.process_notion_import(md_file_path, import_notion)
         elif import_file:
             print("Importing Existing {xx}".format(xx=content_type.title()))
             print("-----------------------\n")
@@ -602,18 +595,19 @@ class CommandNewPost(Command):
 
     def process_notion_import(self, md_file_path, notion_folder):
         with open(md_file_path, 'r', encoding='utf-8') as file:
-            content = file.read()
+            lines = file.readlines()
+            title = lines[0].strip().lstrip('#').strip()  # Extract title from first line
+            content = ''.join(lines)  # Rest of the content
 
         # Find all image links in the Markdown content
         image_links = re.findall(r'!\[.*?\]\((.*?)\)', content)
 
-        md_filename = os.path.splitext(os.path.basename(md_file_path))[0]
-        # Clean up and shorten md_filename
-        new_md_filename = re.sub(r'\s+', '_', md_filename)  # Replace spaces with underscores
-        new_md_filename = re.sub(r'[^\w\-_]', '', new_md_filename)  # Remove non-alphanumeric characters (except underscores and hyphens)
-        new_md_filename = new_md_filename[:20]  # Truncate to 20 characters
+        # Clean up and shorten title for use as folder name
+        folder_name = re.sub(r'\s+', '_', title)  # Replace spaces with underscores
+        folder_name = re.sub(r'[^\w\-_]', '', folder_name)  # Remove non-alphanumeric characters (except underscores and hyphens)
+        folder_name = folder_name[:20]  # Truncate to 20 characters
 
-        images_folder = os.path.join(self.site.original_cwd, 'images', new_md_filename)
+        images_folder = os.path.join(self.site.original_cwd, 'images', folder_name)
         os.makedirs(images_folder, exist_ok=True)
 
         for link in image_links:
@@ -621,7 +615,7 @@ class CommandNewPost(Command):
             filename = unquote(os.path.basename(parsed_url.path))  # Decode URL-encoded filename
 
             # Look for the image in the Notion export folder
-            src_path = os.path.join(notion_folder, md_filename, filename)
+            src_path = os.path.join(notion_folder, filename)
             if not os.path.exists(src_path):
                 LOGGER.warning(f"Image file not found: {src_path}")
                 continue
@@ -631,6 +625,6 @@ class CommandNewPost(Command):
             shutil.copy2(src_path, dst_path)
 
             # Replace the URL in the content with the new local path
-            content = content.replace(link, f'/images/{new_md_filename}/{filename}')
+            content = content.replace(link, f'/images/{folder_name}/{filename}')
 
-        return content
+        return title, content
