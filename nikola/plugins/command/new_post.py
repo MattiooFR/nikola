@@ -616,7 +616,7 @@ class CommandNewPost(Command):
             filename = unquote(os.path.basename(parsed_url.path))  # Decode URL-encoded filename
 
             # Look for the image in the Notion export folder
-            src_path = os.path.join(notion_folder, md_filename, filename)
+            src_path = os.path.join(notion_folder, md_filename, filename, md_filename)
             if not os.path.exists(src_path):
                 LOGGER.warning(f"Image file not found: {src_path}")
                 continue
@@ -626,6 +626,6 @@ class CommandNewPost(Command):
             shutil.copy2(src_path, dst_path)
 
             # Replace the URL in the content with the new local path
-            content = content.replace(link, f'/images/{filename}')
+            content = content.replace(link, f'/images/{md_filename}/{filename}')
 
         return content
