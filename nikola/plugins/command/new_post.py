@@ -332,6 +332,11 @@ class CommandNewPost(Command):
 
             # Process the imported article
             title, content = self.process_notion_import(md_file_path, import_notion)
+
+            if content is None:
+                LOGGER.error("Failed to import Notion content")
+                return
+
         elif import_file:
             print("Importing Existing {xx}".format(xx=content_type.title()))
             print("-----------------------\n")
@@ -440,14 +445,22 @@ class CommandNewPost(Command):
             onefile = False
             LOGGER.warning('This compiler does not support one-file posts.')
 
-        if onefile and import_file:
+        if import_notion:
+            LOGGER.info("Using content from Notion import")
+            # content is already set by process_notion_import
+        elif onefile and import_file:
+            LOGGER.info("Reading content from import file")
             with io.open(import_file, 'r', encoding='utf-8-sig') as fh:
                 content = fh.read()
         elif not import_file:
+            LOGGER.info("Using default content")
             if is_page:
                 content = self.site.MESSAGES[self.site.default_lang]["Write your page here."]
             else:
                 content = self.site.MESSAGES[self.site.default_lang]["Write your post here."]
+
+        LOGGER.info(f"Final content length: {len(content)}")
+        LOGGER.debug(f"First 100 characters of final content: {content[:100]}")
 
         if (not onefile) and import_file:
             # Two-file posts are copied  on import (Issue #2380)
@@ -594,37 +607,78 @@ class CommandNewPost(Command):
     Read more: {0}""".format(COMPILERS_DOC_LINK))
 
     def process_notion_import(self, md_file_path, notion_folder):
-        with open(md_file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-            title = lines[0].strip().lstrip('#').strip()  # Extract title from first line
-            content = ''.join(lines)  # Rest of the content
+        LOGGER.info(f"Starting Notion import process for file: {md_file_path}")
+        LOGGER.info(f"Notion folder: {notion_folder}")
 
-        # Find all image links in the Markdown content
+        try:
+            with open(md_file_path, 'r', encoding='utf-8') as file:
+                lines = file.readlines()
+            LOGGER.info(f"Successfully read file. Number of lines: {len(lines)}")
+
+            if not lines:
+                LOGGER.error("File is empty")
+                return None, None
+
+            # Extract title from the first line
+            title = lines[0].strip().lstrip('#').strip()
+            LOGGER.info(f"Extracted title: {title}")
+
+            # Find the end of the metadata
+            content_start = 0
+            for i, line in enumerate(lines[2:], 1):  # Start from the second line
+                if line.strip() == "":
+                    content_start = i + 1
+                    break
+
+            # Join the content lines
+            content = ''.join(lines[content_start:])
+            LOGGER.info(f"Content length after metadata removal: {len(content)} characters")
+            LOGGER.debug(f"First 100 characters of content: {content[:100]}")
+
+            if not content.strip():
+                LOGGER.error("Content is empty after processing")
+                return None, None
+
+        except Exception as e:
+            LOGGER.error(f"Error processing file: {e}")
+            return None, None
+
         image_links = re.findall(r'!\[.*?\]\((.*?)\)', content)
+        LOGGER.info(f"Found {len(image_links)} image links")
 
-        # Clean up and shorten title for use as folder name
-        folder_name = re.sub(r'\s+', '_', title)  # Replace spaces with underscores
-        folder_name = re.sub(r'[^\w\-_]', '', folder_name)  # Remove non-alphanumeric characters (except underscores and hyphens)
-        folder_name = folder_name[:20]  # Truncate to 20 characters
+        folder_name = re.sub(r'\s+', '_', title)
+        folder_name = re.sub(r'[^\w\-_]', '', folder_name)
+        folder_name = folder_name[:20]
+        LOGGER.info(f"Created folder name: {folder_name}")
 
         images_folder = os.path.join(self.site.original_cwd, 'images', folder_name)
         os.makedirs(images_folder, exist_ok=True)
+        LOGGER.info(f"Created images folder: {images_folder}")
 
         for link in image_links:
+            LOGGER.info(f"Processing image link: {link}")
             parsed_url = urlparse(link)
-            filename = unquote(os.path.basename(parsed_url.path))  # Decode URL-encoded filename
+            filename = unquote(os.path.basename(parsed_url.path))
+            LOGGER.info(f"Decoded filename: {filename}")
 
-            # Look for the image in the Notion export folder
-            src_path = os.path.join(notion_folder, filename)
+            src_path = os.path.join(notion_folder,md_file_path.split('.')[0], filename)
+            LOGGER.info(f"Looking for image at: {src_path}")
+
             if not os.path.exists(src_path):
                 LOGGER.warning(f"Image file not found: {src_path}")
                 continue
 
-            # Copy the image to the images folder
             dst_path = os.path.join(images_folder, filename)
-            shutil.copy2(src_path, dst_path)
+            try:
+                shutil.copy2(src_path, dst_path)
+                LOGGER.info(f"Copied image to: {dst_path}")
+            except Exception as e:
+                LOGGER.error(f"Error copying image: {e}")
+                continue
 
-            # Replace the URL in the content with the new local path
-            content = content.replace(link, f'/images/{folder_name}/{filename}')
+            new_link = f'/images/{folder_name}/{filename}'
+            content = content.replace(link, new_link)
+            LOGGER.info(f"Replaced link {link} with {new_link}")
 
+        LOGGER.info("Notion import process completed")
         return title, content
