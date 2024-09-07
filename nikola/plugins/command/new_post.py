@@ -717,8 +717,9 @@ class CommandNewPost(Command):
                 continue
 
             new_link = f'/images/{folder_name}/{filename}'
-            content = content.replace(link, new_link)
-            LOGGER.info(f"Replaced link {link} with {new_link}")
+            # Remplacer le lien et supprimer le texte alternatif
+            content = re.sub(r'!\[.*?\]\(' + re.escape(link) + r'\)', f'![]({new_link})', content)
+            LOGGER.info(f"Replaced link {link} with {new_link} and removed alt text")
 
         LOGGER.info("Notion import process completed")
         return title, content
