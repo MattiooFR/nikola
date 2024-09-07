@@ -221,6 +221,14 @@ class CommandNewPost(Command):
             'default': '',
             'help': 'Import a Notion export folder'
         },
+        {
+            'name': 'previewimage',
+            'long': 'previewimage',
+            'short': 'i',
+            'type': str,
+            'default': '',
+            'help': "URL or path of the preview image"
+        },
     ]
 
     def _execute(self, options, args):
@@ -337,6 +345,36 @@ class CommandNewPost(Command):
                 LOGGER.error("Failed to import Notion content")
                 return
 
+            # Trouver toutes les images dans le contenu
+            image_links = re.findall(r'!\[.*?\]\((.*?)\)', content)
+
+            if image_links:
+                print("\nChoisissez une image de prévisualisation :")
+                for i, link in enumerate(image_links, 1):
+                    print(f"{i}. {os.path.basename(link)}")
+
+                while True:
+                    choice = input("Entrez le numéro de l'image (ou 0 pour aucune) : ")
+                    try:
+                        choice = int(choice)
+                        if 0 <= choice <= len(image_links):
+                            break
+                        else:
+                            print("Numéro invalide. Réessayez.")
+                    except ValueError:
+                        print("Veuillez entrer un nombre valide.")
+
+                if choice > 0:
+                    options['previewimage'] = image_links[choice - 1]
+                    print(f"Image de prévisualisation sélectionnée : {options['previewimage']}")
+                else:
+                    print("Aucune image de prévisualisation sélectionnée.")
+            else:
+                print("Aucune image trouvée dans le contenu importé.")
+
+            # Set the content format to Markdown
+            content_format = 'markdown'
+
         elif import_file:
             print("Importing Existing {xx}".format(xx=content_type.title()))
             print("-----------------------\n")
@@ -394,7 +432,7 @@ class CommandNewPost(Command):
             'tags': tags,
             'link': '',
             'description': '',
-            'type': post_type,
+            'type': post_type
         }
 
         if not path:
@@ -432,8 +470,11 @@ class CommandNewPost(Command):
         metadata = {}
         if author:
             metadata['author'] = author
+        if options['previewimage']:
+            metadata['previewimage'] = options['previewimage']
         metadata.update(self.site.config['ADDITIONAL_METADATA'])
         data.update(metadata)
+
 
         # ipynb plugin needs the Jupyter kernel info. We get the kernel name
         # from the content_subformat and pass it to the compiler in the metadata
@@ -461,7 +502,7 @@ class CommandNewPost(Command):
 
         LOGGER.info(f"Final content length: {len(content)}")
         LOGGER.debug(f"First 100 characters of final content: {content[:100]}")
-
+        LOGGER.info(f"Metadata: {metadata}")
         if (not onefile) and import_file:
             # Two-file posts are copied  on import (Issue #2380)
             shutil.copy(import_file, txt_path)
@@ -477,7 +518,6 @@ class CommandNewPost(Command):
                 fd.write(utils.write_metadata(data, comment_wrap=False, site=self.site))
             LOGGER.info("Your {0}'s metadata is at: {1}".format(content_type, meta_path))
             event['meta_path'] = meta_path
-        LOGGER.info("Your {0}'s text is at: {1}".format(content_type, txt_path))
 
         signal('new_' + content_type).send(self, **event)
 
